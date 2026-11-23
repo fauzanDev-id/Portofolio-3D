@@ -199,6 +199,14 @@ export class PlayerController {
   }
 
   /**
+   * Sets or updates the camera or camera yaw getter function.
+   * @param {THREE.Camera|Function} cameraOrYawGetter
+   */
+  setCameraOrYawGetter(cameraOrYawGetter) {
+    this.cameraOrYawGetter = cameraOrYawGetter;
+  }
+
+  /**
    * Computes camera-relative movement direction projected onto the XZ horizontal plane.
    */
   _computeCameraRelativeDirection(inputX, inputY, outVector) {
@@ -206,8 +214,16 @@ export class PlayerController {
       const yaw = this.cameraOrYawGetter();
       const sin = Math.sin(yaw);
       const cos = Math.cos(yaw);
-      outVector.set(inputX * cos + inputY * sin, 0, -inputX * sin + inputY * cos);
-      outVector.normalize();
+
+      // Forward heading is (sin(yaw), 0, cos(yaw)); right is (-cos(yaw), 0, sin(yaw))
+      _camForward.set(sin, 0, cos);
+      _camRight.set(-cos, 0, sin);
+
+      outVector
+        .copy(_camForward)
+        .multiplyScalar(inputY)
+        .addScaledVector(_camRight, inputX)
+        .normalize();
       return;
     }
 

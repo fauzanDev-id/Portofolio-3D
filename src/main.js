@@ -2,20 +2,16 @@ import * as THREE from 'three';
 import { Engine } from './core/Engine.js';
 import { World } from './world/World.js';
 import { worldLayout } from './world/worldLayout.js';
-import { DebugOrbit } from './utils/DebugOrbit.js';
 import { InputManager } from './input/InputManager.js';
 import { PlayerModel } from './player/PlayerModel.js';
 import { PlayerController } from './player/PlayerController.js';
+import { CameraRig } from './player/CameraRig.js';
 
 /**
- * Initializes the 3D application, creates the island world, player, and controls.
+ * Initializes the 3D application, creates the island world, player, and third-person camera.
  */
 function init() {
   const engine = new Engine('#canvas-container');
-
-  // Initial camera placement positioned ~8-10m away and slightly above the character
-  engine.camera.position.set(0, 5, 11);
-  engine.camera.lookAt(0, 1.2, 2);
 
   // Stylized atmosphere: sky-blue background and matching horizon fog
   const skyColor = new THREE.Color(0x8ecae6);
@@ -57,11 +53,14 @@ function init() {
   const playerModel = new PlayerModel();
   engine.scene.add(playerModel.group);
 
+  // Create third-person camera rig before player controller so yaw can be linked
+  let cameraRig = null;
+
   const playerController = new PlayerController(
     playerModel,
     inputManager,
     world,
-    engine.camera
+    () => (cameraRig ? cameraRig.getYaw() : 0)
   );
 
   const spawn = world.getSpawnPoint();
@@ -71,14 +70,19 @@ function init() {
     spawn.z
   );
 
-  // Register character kinematic update in engine loop
-  engine.addUpdatable((delta) => {
-    playerController.update(delta);
+  // Third-person spherical camera rig tracking the player
+  cameraRig = new CameraRig({
+    camera: engine.camera,
+    domElement: engine.renderer.domElement,
+    player: playerController,
+    world: world,
   });
 
-  // Dev-only orbit controls smoothly tracking the character
-  // (TEMPORARY: replaced by third-person camera rig in Phase 4)
-  new DebugOrbit(engine, playerController);
+  // Register game loop updates in strict sequence: player physics first, then camera rig
+  engine.addUpdatable((delta) => {
+    playerController.update(delta);
+    cameraRig.update(delta);
+  });
 
   // Start animation loop
   engine.start();

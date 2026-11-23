@@ -2,15 +2,14 @@
 
 An interactive, stylized low-poly 3D developer portfolio website built with Three.js, vanilla JavaScript (ES modules), and Vite. Visitors explore a low-poly island with a third-person character, interact with buildings, and view project showcase panels.
 
-## Current Status: Phase 3 — Placeholder Character & Movement
-- **Camera-Relative Movement**: WASD / Arrow keys move character horizontally relative to camera orientation.
-- **Sprinting & Jumping**: Hold `Shift` to sprint (7 m/s vs 3.5 m/s walk); press `Space` to jump with snappy gravity.
-- **Respawn**: Press `R` to respawn at the central plaza.
-- **Smooth Kinematics**: Acceleration, deceleration, shortest-angle rotation, and zero-allocation frame updates.
-- **Island Boundary Containment**: Prevents falling into water by smoothly sliding along the island perimeter.
-- **Procedural Character**: Capsule body (1.7m) with facing visor and procedural walk/run bobbing.
-- **Dynamic Camera Tracking**: Dev Orbit controls smoothly track character movement.
-- **Data-Driven World Layout**: Configured in `src/world/worldLayout.js`.
+## Current Status: Phase 4 — Third-Person Camera Rig
+- **Smooth Spherical Camera Rig**: Controls camera with yaw, pitch, and zoom tracking the player.
+- **Pointer Drag Orbit**: Left-click or right-click drag rotates camera around the character with Pointer Capture and grab/grabbing cursors. Context menu suppressed.
+- **Wheel Zoom**: Smoothly zooms distance between 4m and 12m with default page scroll prevention.
+- **Camera-Relative Movement**: WASD and Arrow keys move relative to the current camera heading.
+- **Ground & Water Safety**: Camera height is clamped above ground and water level, preventing clipping under the island or ocean.
+- **Building Obstruction Handling**: Raycasts from player look-at to camera against buildings; pulls camera in smoothly to prevent wall clipping.
+- **Strict Update Sequencing**: Camera rig updates immediately following player controller to eliminate visual jitter.
 - **Extended F3 Overlay**: Displays real-time FPS, draw calls, and rendered triangle counts.
 
 ## Tech Stack
@@ -47,24 +46,27 @@ npm run preview
 - **Sprint**: Hold <kbd>Shift</kbd>
 - **Jump**: <kbd>Space</kbd>
 - **Respawn**: <kbd>R</kbd>
+- **Orbit Camera**: <kbd>Left Click + Drag</kbd> or <kbd>Right Click + Drag</kbd>
+- **Zoom Camera**: <kbd>Mouse Wheel</kbd>
 - **Stats Overlay**: <kbd>F3</kbd> (toggle FPS, draw calls, triangles)
-- **Dev Orbit Controls**:
-  - `Left Click + Drag`: Orbit around player
-  - `Right Click + Drag`: Pan camera
-  - `Mouse Wheel`: Zoom in / out
 
-## Tunable Movement Constants
-All kinematic tuning values are exported in `src/player/PlayerController.js`:
-- `WALK_SPEED`: 3.5 m/s
-- `RUN_SPEED`: 7.0 m/s
-- `ACCELERATION`: 22.0 m/s²
-- `DECELERATION`: 26.0 m/s²
-- `AIR_CONTROL`: 0.35
-- `JUMP_HEIGHT`: 1.1 m
-- `GRAVITY`: -25.0 m/s²
-- `TURN_SPEED`: 12.0 rad/s
-- `MAX_DELTA`: 0.05 s
-- `ISLAND_MARGIN`: 1.5 m
+## Tunable Camera Constants
+All camera parameters are exported in `src/player/CameraRig.js` in `CAMERA_CONFIG`:
+- `DEFAULT_DISTANCE`: 7.0 m
+- `MIN_DISTANCE`: 4.0 m
+- `MAX_DISTANCE`: 12.0 m
+- `DEFAULT_PITCH`: 0.35 rad (~20°)
+- `MIN_PITCH`: -0.087 rad (~ -5°)
+- `MAX_PITCH`: 1.22 rad (~ 70°)
+- `MOUSE_SENSITIVITY`: 0.003 rad/px
+- `ZOOM_SPEED`: 0.003
+- `SMOOTH_TARGET`: 14.0 (look-at target damping)
+- `SMOOTH_ROTATION`: 18.0 (orbit angles damping)
+- `SMOOTH_DISTANCE`: 12.0 (zoom damping)
+- `SMOOTH_CAMERA`: 20.0 (final position damping)
+- `LOOK_AT_HEIGHT`: 1.4 m
+- `MIN_GROUND_CLEARANCE`: 0.5 m
+- `OBSTRUCTION_MARGIN`: 0.35 m
 
 ## Planned Folder Structure
 ```text
@@ -76,12 +78,12 @@ Portofolio3D/
 ├── src/
 │   ├── core/          # Engine, lifecycle, renderer, loop
 │   ├── data/          # Portfolio projects and content data
-│   ├── input/         # InputManager, keyboard/mouse state
+│   ├── input/         # InputManager, keyboard/pointer state
 │   ├── interaction/   # Proximity detection and interactive prompts (E key)
-│   ├── player/        # PlayerModel, PlayerController, movement
+│   ├── player/        # PlayerModel, PlayerController, CameraRig
 │   ├── styles/        # CSS stylesheets
 │   ├── ui/            # 2D HUD, modals, project dialogs
-│   ├── utils/         # Helper math, DebugOrbit
+│   ├── utils/         # Helper math and loader utilities
 │   ├── world/         # Island terrain, lighting, buildings, scenery, worldLayout
 │   └── main.js        # Application entry point
 ├── index.html
