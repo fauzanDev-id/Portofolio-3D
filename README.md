@@ -2,15 +2,18 @@
 
 An interactive, stylized low-poly 3D developer portfolio website built with Three.js, vanilla JavaScript (ES modules), and Vite. Visitors explore a low-poly island with a third-person character, interact with buildings, and view project showcase panels.
 
-## Current Status: Phase 4 — Third-Person Camera Rig
-- **Smooth Spherical Camera Rig**: Controls camera with yaw, pitch, and zoom tracking the player.
-- **Pointer Drag Orbit**: Left-click or right-click drag rotates camera around the character with Pointer Capture and grab/grabbing cursors. Context menu suppressed.
-- **Wheel Zoom**: Smoothly zooms distance between 4m and 12m with default page scroll prevention.
-- **Camera-Relative Movement**: WASD and Arrow keys move relative to the current camera heading.
-- **Ground & Water Safety**: Camera height is clamped above ground and water level, preventing clipping under the island or ocean.
-- **Building Obstruction Handling**: Raycasts from player look-at to camera against buildings; pulls camera in smoothly to prevent wall clipping.
-- **Strict Update Sequencing**: Camera rig updates immediately following player controller to eliminate visual jitter.
-- **Extended F3 Overlay**: Displays real-time FPS, draw calls, and rendered triangle counts.
+## Current Status: Phase 6.1 — Game-Like "Follow" Camera Mode
+- **Follow Camera Mode (Default)**: Dynamic chase camera that smoothly swings behind the player as they navigate (like modern adventure games), keeping movement intuitive.
+- **Backward Walk Protection**: Moving toward the camera (<kbd>S</kbd>) suppresses auto-spin, allowing natural backward walking without disorienting 180° camera flips.
+- **Manual Drag Override**: Seamlessly blends manual mouse orbit drag with auto-follow, featuring a 1.5s delay and 0.6s smooth fade-in before resuming follow.
+- **Camera Mode Toggle (<kbd>C</kbd>)**: Press <kbd>C</kbd> to toggle between "Follow" and "Free" orbit modes, accompanied by a sleek glassy neon toast notification.
+- **Single Source of Truth (`src/data/portfolio.js`)**: All portfolio content (bio, skills, projects, experience, education, links) is defined purely as data. Adding or editing items requires touching only this file.
+- **Proximity Interaction System**: Automatically detects when the player approaches any building entrance, smoothly displaying the prompt (<kbd>E</kbd> Interact).
+- **Dark Glassy Neon Modal Panels**: Translucent dark navy panels with cyan and purple neon glow accents, tailored for the nighttime fantasy hub aesthetic.
+- **Accessible & Secure**: Built strictly with DOM APIs (`textContent`, `createElement`) to eliminate XSS. Features ARIA dialog roles, focus management, Tab trapping, and Escape key dismissal.
+- **Glowing Ground Rings**: Neon rings at building entrances that pulse gently and intensify as the character approaches.
+- **Controls & Cam Freeze**: Movement and camera rotation are cleanly suspended while viewing panels, restoring smoothly upon closing.
+- **Responsive**: Fully responsive down to 360px mobile viewport widths.
 
 ## Tech Stack
 - **Three.js**: Lightweight 3D rendering, scene graph, and instanced meshes
@@ -45,28 +48,24 @@ npm run preview
 - **Movement**: <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or <kbd>Arrow Keys</kbd> (camera-relative)
 - **Sprint**: Hold <kbd>Shift</kbd>
 - **Jump**: <kbd>Space</kbd>
-- **Respawn**: <kbd>R</kbd>
+- **Respawn**: <kbd>R</kbd> (resets to central plaza spawn)
+- **Interact**: <kbd>E</kbd> (opens portfolio info panel when near a building entrance)
+- **Close Dialog**: <kbd>Escape</kbd> or click the <kbd>×</kbd> button / backdrop
+- **Toggle Camera Mode**: <kbd>C</kbd> (switches between "Follow" chase camera and "Free" manual orbit camera)
 - **Orbit Camera**: <kbd>Left Click + Drag</kbd> or <kbd>Right Click + Drag</kbd>
 - **Zoom Camera**: <kbd>Mouse Wheel</kbd>
 - **Stats Overlay**: <kbd>F3</kbd> (toggle FPS, draw calls, triangles)
+- **Collider Debug**: <kbd>F4</kbd> (toggle wireframe collider outlines in dev mode)
 
-## Tunable Camera Constants
-All camera parameters are exported in `src/player/CameraRig.js` in `CAMERA_CONFIG`:
-- `DEFAULT_DISTANCE`: 7.0 m
-- `MIN_DISTANCE`: 4.0 m
-- `MAX_DISTANCE`: 12.0 m
-- `DEFAULT_PITCH`: 0.35 rad (~20°)
-- `MIN_PITCH`: -0.087 rad (~ -5°)
-- `MAX_PITCH`: 1.22 rad (~ 70°)
-- `MOUSE_SENSITIVITY`: 0.003 rad/px
-- `ZOOM_SPEED`: 0.003
-- `SMOOTH_TARGET`: 14.0 (look-at target damping)
-- `SMOOTH_ROTATION`: 18.0 (orbit angles damping)
-- `SMOOTH_DISTANCE`: 12.0 (zoom damping)
-- `SMOOTH_CAMERA`: 20.0 (final position damping)
-- `LOOK_AT_HEIGHT`: 1.4 m
-- `MIN_GROUND_CLEARANCE`: 0.5 m
-- `OBSTRUCTION_MARGIN`: 0.35 m
+## How to Edit Portfolio Content
+Open `src/data/portfolio.js`. This is the ONLY file you need to edit:
+- **Profile header**: Edit `profile` object (name, title, tagline, avatar, location).
+- **About Me**: Edit `sections['developer-house']` (`bio` paragraphs, `facts`).
+- **Skills**: Add or modify skill groups and items in `sections['skills']` (name and `level` 0-100).
+- **Projects**: Add project entries in `sections['projects']` (title, description, tech tags, URLs).
+- **Experience**: Add roles in `sections['experience']` (title, organization, period, description).
+- **Education**: Add degrees or certificates in `sections['education']`.
+- **Contact & Links**: Add social links or email channels in `sections['contact']`.
 
 ## Planned Folder Structure
 ```text
@@ -77,14 +76,14 @@ Portofolio3D/
 │   └── textures/      # Textures and environment maps
 ├── src/
 │   ├── core/          # Engine, lifecycle, renderer, loop
-│   ├── data/          # Portfolio projects and content data
+│   ├── data/          # Portfolio projects and content data (portfolio.js)
 │   ├── input/         # InputManager, keyboard/pointer state
-│   ├── interaction/   # Proximity detection and interactive prompts (E key)
+│   ├── interaction/   # Proximity detection and interaction manager
 │   ├── player/        # PlayerModel, PlayerController, CameraRig
-│   ├── styles/        # CSS stylesheets
-│   ├── ui/            # 2D HUD, modals, project dialogs
-│   ├── utils/         # Helper math and loader utilities
-│   ├── world/         # Island terrain, lighting, buildings, scenery, worldLayout
+│   ├── styles/        # CSS stylesheets (main.css, ui.css)
+│   ├── ui/            # InteractionPrompt, InfoPanel modal
+│   ├── utils/         # ColliderDebug, helper math utilities
+│   ├── world/         # Island terrain, buildings, PoiMarkers, CollisionSystem, worldLayout
 │   └── main.js        # Application entry point
 ├── index.html
 ├── package.json

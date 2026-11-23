@@ -5,6 +5,7 @@ import * as THREE from 'three';
  * Modify these constants to adjust player movement feel.
  */
 export const PLAYER_CONFIG = {
+  RADIUS: 0.4, // Collision cylinder radius in meters
   WALK_SPEED: 3.5, // Walk speed in m/s
   RUN_SPEED: 7.0, // Run speed (Shift held) in m/s
   ACCELERATION: 22.0, // Horizontal acceleration rate in m/s^2
@@ -25,7 +26,7 @@ const _up = new THREE.Vector3(0, 1, 0);
 
 /**
  * Controls character kinematics, camera-relative navigation, jumping,
- * and island boundary constraints.
+ * obstacle collision resolution, and island boundary constraints.
  */
 export class PlayerController {
   /**
@@ -33,12 +34,14 @@ export class PlayerController {
    * @param {import('../input/InputManager.js').InputManager} input
    * @param {import('../world/World.js').World} world
    * @param {THREE.Camera|Function} cameraOrYawGetter - Camera instance or function returning yaw
+   * @param {import('../world/CollisionSystem.js').CollisionSystem} [collisionSystem]
    */
-  constructor(model, input, world, cameraOrYawGetter) {
+  constructor(model, input, world, cameraOrYawGetter, collisionSystem = null) {
     this.model = model;
     this.input = input;
     this.world = world;
     this.cameraOrYawGetter = cameraOrYawGetter;
+    this.collisionSystem = collisionSystem;
 
     this.enabled = true;
 
@@ -55,6 +58,22 @@ export class PlayerController {
   }
 
   /**
+   * Sets or updates the collision system.
+   * @param {import('../world/CollisionSystem.js').CollisionSystem} collisionSystem
+   */
+  setCollisionSystem(collisionSystem) {
+    this.collisionSystem = collisionSystem;
+    if (this.collisionSystem) {
+      this.collisionSystem.resolveCircle(
+        this.position,
+        PLAYER_CONFIG.RADIUS,
+        this.velocity
+      );
+      this.model.group.position.copy(this.position);
+    }
+  }
+
+  /**
    * Sets player position in world space.
    * @param {number} x
    * @param {number} y
@@ -62,6 +81,13 @@ export class PlayerController {
    */
   setPosition(x, y, z) {
     this.position.set(x, y, z);
+    if (this.collisionSystem) {
+      this.collisionSystem.resolveCircle(
+        this.position,
+        PLAYER_CONFIG.RADIUS,
+        this.velocity
+      );
+    }
     this.model.group.position.copy(this.position);
   }
 
@@ -71,6 +97,30 @@ export class PlayerController {
    */
   getPosition() {
     return this.position;
+  }
+
+  /**
+   * Returns current velocity vector reference.
+   * @returns {THREE.Vector3}
+   */
+  getVelocity() {
+    return this.velocity;
+  }
+
+  /**
+   * Returns current horizontal movement speed in m/s.
+   * @returns {number}
+   */
+  getSpeed() {
+    return Math.hypot(this.velocity.x, this.velocity.z);
+  }
+
+  /**
+   * Returns true if character is currently moving horizontally.
+   * @returns {boolean}
+   */
+  isMoving() {
+    return this.getSpeed() > 0.2;
   }
 
   /**
@@ -102,6 +152,16 @@ export class PlayerController {
     this.velocity.set(0, 0, 0);
     this.yaw = 0;
     this.isGrounded = true;
+
+    // Guarantee player never respawns inside an obstacle
+    if (this.collisionSystem) {
+      this.collisionSystem.resolveCircle(
+        this.position,
+        PLAYER_CONFIG.RADIUS,
+        this.velocity
+      );
+    }
+
     this.model.group.position.copy(this.position);
     this.model.group.rotation.y = this.yaw;
   }
@@ -126,21 +186,37 @@ export class PlayerController {
       return;
     }
 
+    const prevX = this.position.x;
+    const prevZ = this.position.z;
+
+    // 1. Horizontal movement with sub-stepped collision resolution
     this._updateMovement(dt);
+
+    // 2. Vertical jump and gravity
     this._updateJumpAndGravity(dt);
+
+    // 3. Keep within island perimeter
     this._clampToIslandBoundary();
-    this._updateRotation(dt);
+
+    // 4. Measure actual displacement moved this frame
+    const actualDisplacement = Math.hypot(
+      this.position.x - prevX,
+      this.position.z - prevZ
+    );
+    const actualSpeed = actualDisplacement / dt;
+
+    // 5. Shortest-arc facing rotation (faces along movement direction)
+    this._updateRotation(dt, actualSpeed);
 
     // Sync visual model position
     this.model.group.position.copy(this.position);
 
-    // Determine animation state
-    const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    // Visual state reflects ACTUAL movement: if blocked by a wall, switch to idle
     if (!this.isGrounded) {
       this.model.setState('jump');
-    } else if (horizontalSpeed > 4.0) {
+    } else if (actualSpeed > 4.0) {
       this.model.setState('run');
-    } else if (horizontalSpeed > 0.2) {
+    } else if (actualSpeed > 0.2) {
       this.model.setState('walk');
     } else {
       this.model.setState('idle');
@@ -193,9 +269,31 @@ export class PlayerController {
       if (Math.abs(this.velocity.z) < 0.01) this.velocity.z = 0;
     }
 
-    // Integrate horizontal position
-    this.position.x += this.velocity.x * dt;
-    this.position.z += this.velocity.z * dt;
+    // Collision resolution is strictly horizontal on the XZ plane.
+    // Buildings and trees act as infinite vertical obstacles (pillars/walls);
+    // jumping does not allow climbing onto building roofs or tree trunks.
+    const dispX = this.velocity.x * dt;
+    const dispZ = this.velocity.z * dt;
+    const dispDist = Math.hypot(dispX, dispZ);
+
+    // Sub-step movement if single-frame displacement exceeds fraction of player radius
+    const maxSubstepDist = PLAYER_CONFIG.RADIUS * 0.45;
+    const steps = Math.max(1, Math.ceil(dispDist / maxSubstepDist));
+    const stepDx = dispX / steps;
+    const stepDz = dispZ / steps;
+
+    for (let s = 0; s < steps; s++) {
+      this.position.x += stepDx;
+      this.position.z += stepDz;
+
+      if (this.collisionSystem) {
+        this.collisionSystem.resolveCircle(
+          this.position,
+          PLAYER_CONFIG.RADIUS,
+          this.velocity
+        );
+      }
+    }
   }
 
   /**
@@ -296,10 +394,9 @@ export class PlayerController {
   /**
    * Interpolates character facing yaw along the shortest angular arc toward movement direction.
    */
-  _updateRotation(dt) {
-    const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
-    if (horizontalSpeed > 0.15) {
-      // Model forward is local +Z
+  _updateRotation(dt, actualSpeed) {
+    if (actualSpeed > 0.15) {
+      // Model forward is local +Z; face along actual velocity/movement direction
       const targetYaw = Math.atan2(this.velocity.x, this.velocity.z);
 
       // Shortest angle wrap to [-PI, PI] to prevent 360-degree flip spins

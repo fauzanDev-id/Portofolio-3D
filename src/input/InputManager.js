@@ -118,16 +118,25 @@ export class InputManager {
   }
 
   /**
+   * Returns true once per press for the specified key code, clearing the flag.
+   * @param {string} code - KeyboardEvent.code
+   * @returns {boolean}
+   */
+  isJustPressed(code) {
+    if (!this.enabled && code !== 'Escape') return false;
+    if (this._justPressedKeys.has(code)) {
+      this._justPressedKeys.delete(code);
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Returns true once per press for Space (jump), clearing the flag.
    * @returns {boolean}
    */
   isJumpJustPressed() {
-    if (!this.enabled) return false;
-    if (this._justPressedKeys.has('Space')) {
-      this._justPressedKeys.delete('Space');
-      return true;
-    }
-    return false;
+    return this.isJustPressed('Space');
   }
 
   /**
@@ -135,12 +144,15 @@ export class InputManager {
    * @returns {boolean}
    */
   isRespawnJustPressed() {
-    if (!this.enabled) return false;
-    if (this._justPressedKeys.has('KeyR')) {
-      this._justPressedKeys.delete('KeyR');
-      return true;
-    }
-    return false;
+    return this.isJustPressed('KeyR');
+  }
+
+  /**
+   * Returns true once per press for KeyC (camera mode toggle), clearing the flag.
+   * @returns {boolean}
+   */
+  isModeToggleJustPressed() {
+    return this.isJustPressed('KeyC');
   }
 
   /**

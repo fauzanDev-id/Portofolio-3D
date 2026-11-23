@@ -20,6 +20,11 @@ export const CAMERA_CONFIG = {
   LOOK_AT_HEIGHT: 1.4, // Vertical focal offset above character feet in meters
   MIN_GROUND_CLEARANCE: 0.5, // Minimum clearance above ground/water surface in meters
   OBSTRUCTION_MARGIN: 0.35, // Pull-in safety buffer before wall hit point in meters
+  RECENTER_RATE: 2.2, // Angular damping rate for auto-follow chase camera in rad/s
+  IDLE_SPEED_THRESHOLD: 0.25, // Velocity threshold below which auto-follow is inactive in m/s
+  POST_DRAG_DELAY: 1.5, // Delay in seconds after mouse drag before auto-follow resumes
+  DRAG_FADE_IN_TIME: 0.6, // Fade-in duration in seconds for smooth follow resumption
+  PITCH_EASING_STRENGTH: 0.3, // Subtle pitch return toward default pitch while sprinting
 };
 
 // Reusable scratch vectors to eliminate per-frame garbage collection allocations
@@ -60,6 +65,10 @@ export class CameraRig {
     }
 
     this.enabled = true;
+
+    // Camera mode: 'follow' (auto-recenter behind character) or 'free' (pure manual orbit)
+    this.mode = 'follow';
+    this._timeSinceDrag = CAMERA_CONFIG.POST_DRAG_DELAY;
 
     // Spherical orbit state
     this._targetYaw = 0; // 0 radians = camera sits behind character (+Z looking North)
@@ -129,6 +138,7 @@ export class CameraRig {
       // Allow drag on left (0) or right (2) mouse button
       if (event.button === 0 || event.button === 2) {
         this._isDragging = true;
+        this._timeSinceDrag = 0;
         this._activePointerId = event.pointerId;
         this._lastPointerX = event.clientX;
         this._lastPointerY = event.clientY;
@@ -220,6 +230,7 @@ export class CameraRig {
     }
     this._isDragging = false;
     this._activePointerId = null;
+    this._timeSinceDrag = 0;
     this.domElement.style.cursor = 'grab';
   }
 
@@ -232,6 +243,33 @@ export class CameraRig {
     const dx = this._currentLookAt.x - this.camera.position.x;
     const dz = this._currentLookAt.z - this.camera.position.z;
     return Math.atan2(dx, dz);
+  }
+
+  /**
+   * Returns current camera tracking mode ('follow' or 'free').
+   * @returns {'follow'|'free'}
+   */
+  getMode() {
+    return this.mode;
+  }
+
+  /**
+   * Sets camera tracking mode.
+   * @param {'follow'|'free'} mode
+   */
+  setMode(mode) {
+    if (mode === 'follow' || mode === 'free') {
+      this.mode = mode;
+    }
+  }
+
+  /**
+   * Toggles camera tracking mode between 'follow' and 'free'.
+   * @returns {'follow'|'free'} The new active mode
+   */
+  toggleMode() {
+    this.mode = this.mode === 'follow' ? 'free' : 'follow';
+    return this.mode;
   }
 
   /**
@@ -263,6 +301,69 @@ export class CameraRig {
     );
     const targetAlpha = 1 - Math.exp(-CAMERA_CONFIG.SMOOTH_TARGET * dt);
     this._currentLookAt.lerp(_desiredLookAt, targetAlpha);
+
+    // 1.5. Dynamic auto-follow chase camera behind moving player
+    if (this.mode === 'follow' && this.enabled) {
+      if (this._isDragging) {
+        this._timeSinceDrag = 0;
+      } else {
+        this._timeSinceDrag += dt;
+
+        if (this._timeSinceDrag >= CAMERA_CONFIG.POST_DRAG_DELAY) {
+          const dragWeight = Math.min(
+            1,
+            (this._timeSinceDrag - CAMERA_CONFIG.POST_DRAG_DELAY) /
+              CAMERA_CONFIG.DRAG_FADE_IN_TIME
+          );
+
+          const speed =
+            this.player && typeof this.player.getSpeed === 'function'
+              ? this.player.getSpeed()
+              : 0;
+
+          if (speed > CAMERA_CONFIG.IDLE_SPEED_THRESHOLD) {
+            const vel = this.player.getVelocity();
+            const ux = vel.x / speed;
+            const uz = vel.z / speed;
+
+            // Camera horizontal heading forward vector
+            const camYaw = this.getYaw();
+            const fx = Math.sin(camYaw);
+            const fz = Math.cos(camYaw);
+
+            // Dot product between character velocity and camera forward direction
+            const dot = ux * fx + uz * fz;
+
+            // Suppress auto-recentering when walking toward camera (> 120 deg, dot < -0.5)
+            // Smoothly ramps down to zero between dot = -0.2 and dot = -0.6
+            const forwardWeight = Math.max(0, Math.min(1, (dot + 0.6) / 0.4));
+            const speedWeight = Math.min(1, speed / 7.0);
+            const totalWeight = dragWeight * forwardWeight * speedWeight;
+
+            if (totalWeight > 0.001) {
+              const targetYawBehind = Math.atan2(-ux, -uz);
+              let diff = targetYawBehind - this._targetYaw;
+              diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+
+              const alpha =
+                1 - Math.exp(-CAMERA_CONFIG.RECENTER_RATE * totalWeight * dt);
+              this._targetYaw += diff * alpha;
+
+              // Subtle pitch recovery toward default elevation while running
+              if (speed > 5.0) {
+                const pitchAlpha =
+                  1 -
+                  Math.exp(
+                    -CAMERA_CONFIG.PITCH_EASING_STRENGTH * totalWeight * dt
+                  );
+                this._targetPitch +=
+                  (CAMERA_CONFIG.DEFAULT_PITCH - this._targetPitch) * pitchAlpha;
+              }
+            }
+          }
+        }
+      }
+    }
 
     // 2. Smooth spherical angles and distance
     this._currentYaw = THREE.MathUtils.damp(
