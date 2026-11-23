@@ -439,6 +439,25 @@ export class World {
   }
 
   /**
+   * Returns the walkable ground elevation at world coordinate (x, z).
+   * Single source of truth for ground height — update here when procedural terrain or hills are added.
+   * @param {number} x
+   * @param {number} z
+   * @returns {number}
+   */
+  getGroundHeight(x, z) {
+    return 0; // Flat island plateau for now
+  }
+
+  /**
+   * Returns the island boundary radius from layout configuration.
+   * @returns {number}
+   */
+  getIslandRadius() {
+    return this.layout.island.radius;
+  }
+
+  /**
    * Returns metadata and entrance coordinates for all interactive points of interest.
    * @returns {Array<{ id: string, label: string, position: {x:number, z:number}, entrance: {x:number, z:number}, interactionRadius: number }>}
    */

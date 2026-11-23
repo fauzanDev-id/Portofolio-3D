@@ -3,16 +3,19 @@ import { Engine } from './core/Engine.js';
 import { World } from './world/World.js';
 import { worldLayout } from './world/worldLayout.js';
 import { DebugOrbit } from './utils/DebugOrbit.js';
+import { InputManager } from './input/InputManager.js';
+import { PlayerModel } from './player/PlayerModel.js';
+import { PlayerController } from './player/PlayerController.js';
 
 /**
- * Initializes the 3D application, creates the island world, and binds controls.
+ * Initializes the 3D application, creates the island world, player, and controls.
  */
 function init() {
   const engine = new Engine('#canvas-container');
 
-  // Initial camera placement providing an overview of the island
-  engine.camera.position.set(0, 32, 58);
-  engine.camera.lookAt(0, 1.5, 0);
+  // Initial camera placement positioned ~8-10m away and slightly above the character
+  engine.camera.position.set(0, 5, 11);
+  engine.camera.lookAt(0, 1.2, 2);
 
   // Stylized atmosphere: sky-blue background and matching horizon fog
   const skyColor = new THREE.Color(0x8ecae6);
@@ -45,10 +48,37 @@ function init() {
   engine.scene.add(sunLight);
 
   // Build the greybox island world from data layout
-  new World(engine.scene, worldLayout);
+  const world = new World(engine.scene, worldLayout);
 
-  // Dev-only orbit controls (TEMPORARY: replaced by third-person controller in Phase 4)
-  new DebugOrbit(engine);
+  // Input manager tracking keyboard controls
+  const inputManager = new InputManager();
+
+  // Character model and kinematic controller
+  const playerModel = new PlayerModel();
+  engine.scene.add(playerModel.group);
+
+  const playerController = new PlayerController(
+    playerModel,
+    inputManager,
+    world,
+    engine.camera
+  );
+
+  const spawn = world.getSpawnPoint();
+  playerController.setPosition(
+    spawn.x,
+    world.getGroundHeight(spawn.x, spawn.z),
+    spawn.z
+  );
+
+  // Register character kinematic update in engine loop
+  engine.addUpdatable((delta) => {
+    playerController.update(delta);
+  });
+
+  // Dev-only orbit controls smoothly tracking the character
+  // (TEMPORARY: replaced by third-person camera rig in Phase 4)
+  new DebugOrbit(engine, playerController);
 
   // Start animation loop
   engine.start();
