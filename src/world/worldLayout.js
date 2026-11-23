@@ -22,6 +22,15 @@ export const worldLayout = {
     color: 0xd4a373,
   },
 
+  // Distant hovering islets decorating the twilight horizon
+  floatingIslands: [
+    { x: 72, y: 16, z: -40, radius: 7.0, height: 11.0 },
+    { x: -68, y: 22, z: -55, radius: 8.5, height: 13.0 },
+    { x: 80, y: 18, z: 45, radius: 6.5, height: 9.5 },
+    { x: -75, y: 14, z: 40, radius: 7.5, height: 12.0 },
+    { x: 0, y: 25, z: 88, radius: 9.0, height: 14.0 },
+  ],
+
   // Six distinct buildings arranged in a ring at distance ~26m from the plaza center,
   // facing inward toward (0, 0) with entrances on the plaza-facing side.
   buildings: [

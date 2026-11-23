@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { NIGHT_PALETTE } from './Atmosphere.js';
 
 /**
  * Builds the 3D low-poly island world from declarative layout data.
@@ -30,6 +31,7 @@ export class World {
     this._buildBuildings();
     this._buildTrees();
     this._buildRocks();
+    this._buildLanterns();
   }
 
   /**
@@ -62,18 +64,49 @@ export class World {
     this.group.add(sand);
     this._disposables.push(sandGeo, sandMat);
 
-    // Surrounding ocean water plane
-    const waterGeo = new THREE.PlaneGeometry(320, 320);
-    const waterMat = new THREE.MeshLambertMaterial({
-      color: waterColor,
+    // Surrounding ocean water plane with night oceanic colors and animated wave shimmer
+    const waterGeo = new THREE.PlaneGeometry(360, 360, 24, 24);
+    this.waterMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uDeepColor: { value: new THREE.Color(NIGHT_PALETTE.water) },
+        uShimmerColor: { value: new THREE.Color(NIGHT_PALETTE.waterShimmer) },
+      },
+      vertexShader: `
+        uniform float uTime;
+        varying vec3 vWorldPos;
+        void main() {
+          vec3 pos = position;
+          // Subtle low-cost wave motion
+          float wave = sin(pos.x * 0.12 + uTime * 1.1) * cos(pos.y * 0.12 + uTime * 0.8) * 0.1;
+          pos.z += wave;
+          vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform vec3 uDeepColor;
+        uniform vec3 uShimmerColor;
+        varying vec3 vWorldPos;
+        void main() {
+          // Low-cost animated wave shimmer highlights
+          float shimmer = sin(vWorldPos.x * 0.35 + vWorldPos.z * 0.25 + uTime * 1.4) * 0.5 + 0.5;
+          shimmer = pow(shimmer, 7.0) * 0.55;
+          vec3 col = mix(uDeepColor, uShimmerColor, shimmer);
+          gl_FragColor = vec4(col, 0.92);
+        }
+      `,
       transparent: true,
-      opacity: 0.85,
+      depthWrite: false,
+      fog: false,
     });
-    const water = new THREE.Mesh(waterGeo, waterMat);
+    const water = new THREE.Mesh(waterGeo, this.waterMat);
     water.rotation.x = -Math.PI / 2;
     water.position.y = -2.1;
     this.group.add(water);
-    this._disposables.push(waterGeo, waterMat);
+    this._disposables.push(waterGeo, this.waterMat);
   }
 
   /**
@@ -130,14 +163,64 @@ export class World {
 
   /**
    * Builds distinct stylized buildings from layout data.
-   * Each building is a Group with box body, 4-sided roof, and door box on the entrance side.
+   * Each building is a Group with box body, 4-sided roof, glowing windows,
+   * neon door trim, and door box on the entrance side.
    */
   _buildBuildings() {
     const doorMat = new THREE.MeshLambertMaterial({
-      color: 0x3d2614,
+      color: 0x241d18,
       flatShading: true,
     });
     this._disposables.push(doorMat);
+
+    // Shared glowing window material (warm amber glow, capped for crisp bloom)
+    const windowMat = new THREE.MeshLambertMaterial({
+      color: 0xffea75,
+      emissive: NIGHT_PALETTE.windowAmber,
+      emissiveIntensity: 1.15,
+      flatShading: true,
+    });
+    this._disposables.push(windowMat);
+
+    // Shared glowing door frame neon material (futuristic cyan glow, capped for crisp bloom)
+    const doorNeonMat = new THREE.MeshLambertMaterial({
+      color: 0x00f0ff,
+      emissive: NIGHT_PALETTE.doorNeon,
+      emissiveIntensity: 1.25,
+      flatShading: true,
+    });
+    this._disposables.push(doorNeonMat);
+
+    // Shared window geometries
+    const winGeoFront = new THREE.BoxGeometry(1.2, 1.2, 0.12);
+    const winGeoSide = new THREE.BoxGeometry(0.12, 1.2, 1.2);
+    this._disposables.push(winGeoFront, winGeoSide);
+
+    // Door and trim geometries
+    const doorW = 1.6;
+    const doorH = 2.4;
+    const doorD = 0.2;
+    const doorGeo = new THREE.BoxGeometry(doorW, doorH, doorD);
+    const trimGeo = new THREE.BoxGeometry(doorW + 0.25, doorH + 0.15, doorD * 0.7);
+    this._disposables.push(doorGeo, trimGeo);
+
+    // Transform helper to pre-calculate world matrices for instanced elements
+    const dummyParent = new THREE.Object3D();
+    const dummyChild = new THREE.Object3D();
+    dummyParent.add(dummyChild);
+
+    const getLocalWorldMatrix = (bx, bz, rotY, lx, ly, lz) => {
+      dummyParent.position.set(bx, 0, bz);
+      dummyParent.rotation.set(0, rotY, 0);
+      dummyChild.position.set(lx, ly, lz);
+      dummyParent.updateMatrixWorld(true);
+      return dummyChild.matrixWorld.clone();
+    };
+
+    const doorMatrices = [];
+    const trimMatrices = [];
+    const frontWinMatrices = [];
+    const sideWinMatrices = [];
 
     for (const b of this.layout.buildings) {
       const buildingGroup = new THREE.Group();
@@ -173,17 +256,37 @@ export class World {
       buildingGroup.add(roofMesh);
       this._disposables.push(roofGeo, roofMat);
 
-      // Door box on the local front (+Z) face facing the plaza
-      const doorW = 1.6;
-      const doorH = 2.4;
-      const doorD = 0.2;
-      const doorGeo = new THREE.BoxGeometry(doorW, doorH, doorD);
-      const doorMesh = new THREE.Mesh(doorGeo, doorMat);
-      doorMesh.position.set(0, doorH / 2, b.size.d / 2 + doorD / 2);
-      doorMesh.castShadow = true;
-      doorMesh.receiveShadow = true;
-      buildingGroup.add(doorMesh);
-      this._disposables.push(doorGeo);
+      // Record transform for instanced door
+      doorMatrices.push(
+        getLocalWorldMatrix(b.position.x, b.position.z, b.rotationY, 0, doorH / 2, b.size.d / 2 + doorD / 2)
+      );
+
+      // Record transform for instanced cyan neon trim
+      trimMatrices.push(
+        getLocalWorldMatrix(b.position.x, b.position.z, b.rotationY, 0, (doorH + 0.15) / 2, b.size.d / 2 + 0.04)
+      );
+
+      // Record transforms for instanced front amber windows
+      frontWinMatrices.push(
+        getLocalWorldMatrix(b.position.x, b.position.z, b.rotationY, -b.size.w * 0.3, b.size.h * 0.55, b.size.d / 2 + 0.04)
+      );
+      frontWinMatrices.push(
+        getLocalWorldMatrix(b.position.x, b.position.z, b.rotationY, b.size.w * 0.3, b.size.h * 0.55, b.size.d / 2 + 0.04)
+      );
+
+      if (b.size.h >= 6.0) {
+        frontWinMatrices.push(
+          getLocalWorldMatrix(b.position.x, b.position.z, b.rotationY, 0, b.size.h * 0.82, b.size.d / 2 + 0.04)
+        );
+      }
+
+      // Record transforms for instanced side amber windows
+      sideWinMatrices.push(
+        getLocalWorldMatrix(b.position.x, b.position.z, b.rotationY, b.size.w / 2 + 0.04, b.size.h * 0.55, 0)
+      );
+      sideWinMatrices.push(
+        getLocalWorldMatrix(b.position.x, b.position.z, b.rotationY, -b.size.w / 2 - 0.04, b.size.h * 0.55, 0)
+      );
 
       // Place and rotate entire building group
       buildingGroup.position.set(b.position.x, 0, b.position.z);
@@ -200,6 +303,44 @@ export class World {
         d: b.size.d,
         rotationY: b.rotationY,
       });
+    }
+
+    // Instanced doors (casts and receives shadows)
+    if (doorMatrices.length > 0) {
+      const doorInstanced = new THREE.InstancedMesh(doorGeo, doorMat, doorMatrices.length);
+      doorMatrices.forEach((mat, i) => doorInstanced.setMatrixAt(i, mat));
+      doorInstanced.castShadow = true;
+      doorInstanced.receiveShadow = true;
+      doorInstanced.instanceMatrix.needsUpdate = true;
+      this.group.add(doorInstanced);
+      this._disposables.push(doorInstanced);
+    }
+
+    // Instanced glowing cyan neon trims (bloom glow)
+    if (trimMatrices.length > 0) {
+      const trimInstanced = new THREE.InstancedMesh(trimGeo, doorNeonMat, trimMatrices.length);
+      trimMatrices.forEach((mat, i) => trimInstanced.setMatrixAt(i, mat));
+      trimInstanced.instanceMatrix.needsUpdate = true;
+      this.group.add(trimInstanced);
+      this._disposables.push(trimInstanced);
+    }
+
+    // Instanced glowing front amber windows
+    if (frontWinMatrices.length > 0) {
+      const frontWinInstanced = new THREE.InstancedMesh(winGeoFront, windowMat, frontWinMatrices.length);
+      frontWinMatrices.forEach((mat, i) => frontWinInstanced.setMatrixAt(i, mat));
+      frontWinInstanced.instanceMatrix.needsUpdate = true;
+      this.group.add(frontWinInstanced);
+      this._disposables.push(frontWinInstanced);
+    }
+
+    // Instanced glowing side amber windows
+    if (sideWinMatrices.length > 0) {
+      const sideWinInstanced = new THREE.InstancedMesh(winGeoSide, windowMat, sideWinMatrices.length);
+      sideWinMatrices.forEach((mat, i) => sideWinInstanced.setMatrixAt(i, mat));
+      sideWinInstanced.instanceMatrix.needsUpdate = true;
+      this.group.add(sideWinInstanced);
+      this._disposables.push(sideWinInstanced);
     }
   }
 
@@ -480,6 +621,120 @@ export class World {
    */
   getColliderData() {
     return [...this.colliders];
+  }
+
+  /**
+   * Procedurally generates glowing path lanterns using InstancedMeshes.
+   * Alternates sides along each path, providing warm amber glow without extra point lights.
+   */
+  _buildLanterns() {
+    const lanternPositions = [];
+
+    for (const p of this.layout.paths) {
+      const dx = p.end.x - p.start.x;
+      const dz = p.end.z - p.start.z;
+      const length = Math.hypot(dx, dz);
+      if (length < 6) continue;
+
+      const ux = dx / length;
+      const uz = dz / length;
+      // Perpendicular normal to the path
+      const nx = -uz;
+      const nz = ux;
+
+      // Spacing every ~8.5m
+      const stepDist = 8.5;
+      const startDist = 4.5;
+      let side = 1;
+
+      for (let s = startDist; s < length - 3; s += stepDist) {
+        const offset = (p.width / 2 + 0.45) * side;
+        const lx = p.start.x + ux * s + nx * offset;
+        const lz = p.start.z + uz * s + nz * offset;
+        lanternPositions.push({ x: lx, z: lz });
+        side *= -1; // Alternate sides
+      }
+    }
+
+    const count = lanternPositions.length;
+    if (count === 0) return;
+
+    // 1. Lantern post (dark iron cylinder)
+    const postGeo = new THREE.CylinderGeometry(0.07, 0.1, 1.8, 6);
+    const postMat = new THREE.MeshLambertMaterial({
+      color: 0x1c1e28,
+      flatShading: true,
+    });
+    const postInstanced = new THREE.InstancedMesh(postGeo, postMat, count);
+    postInstanced.castShadow = true;
+    postInstanced.receiveShadow = true;
+    this._disposables.push(postGeo, postMat, postInstanced);
+
+    // 2. Glowing amber lantern head (capped emissive intensity)
+    const headGeo = new THREE.BoxGeometry(0.38, 0.44, 0.38);
+    const headMat = new THREE.MeshLambertMaterial({
+      color: 0xffea75,
+      emissive: NIGHT_PALETTE.lanternAmber,
+      emissiveIntensity: 1.35,
+      flatShading: true,
+    });
+    const headInstanced = new THREE.InstancedMesh(headGeo, headMat, count);
+    this._disposables.push(headGeo, headMat, headInstanced);
+
+    // 3. Additive soft glow halo billboard (scaled down opacity to prevent double-bloom haze)
+    const haloGeo = new THREE.PlaneGeometry(1.6, 1.6);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0xffaa00,
+      transparent: true,
+      opacity: 0.16,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const haloInstanced = new THREE.InstancedMesh(haloGeo, haloMat, count);
+    this._disposables.push(haloGeo, haloMat, haloInstanced);
+
+    const dummy = new THREE.Object3D();
+
+    for (let i = 0; i < count; i++) {
+      const pos = lanternPositions[i];
+      const groundY = this.getGroundHeight(pos.x, pos.z);
+
+      // Post matrix
+      dummy.position.set(pos.x, groundY + 0.9, pos.z);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      postInstanced.setMatrixAt(i, dummy.matrix);
+
+      // Head matrix (at top of post)
+      dummy.position.set(pos.x, groundY + 1.8 + 0.22, pos.z);
+      dummy.updateMatrix();
+      headInstanced.setMatrixAt(i, dummy.matrix);
+
+      // Halo matrix
+      dummy.position.set(pos.x, groundY + 1.8 + 0.22, pos.z);
+      dummy.rotation.set(-Math.PI / 4, 0, 0);
+      dummy.updateMatrix();
+      haloInstanced.setMatrixAt(i, dummy.matrix);
+    }
+
+    postInstanced.instanceMatrix.needsUpdate = true;
+    headInstanced.instanceMatrix.needsUpdate = true;
+    haloInstanced.instanceMatrix.needsUpdate = true;
+
+    this.group.add(postInstanced);
+    this.group.add(headInstanced);
+    this.group.add(haloInstanced);
+  }
+
+  /**
+   * Main per-frame update for dynamic environmental elements (water shimmer).
+   * @param {number} delta
+   */
+  update(delta) {
+    if (this.waterMat && this.waterMat.uniforms) {
+      this.waterMat.uniforms.uTime.value += delta;
+    }
   }
 
   /**

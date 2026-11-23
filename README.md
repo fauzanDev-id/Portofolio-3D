@@ -2,21 +2,34 @@
 
 An interactive, stylized low-poly 3D developer portfolio website built with Three.js, vanilla JavaScript (ES modules), and Vite. Visitors explore a low-poly island with a third-person character, interact with buildings, and view project showcase panels.
 
-## Current Status: Phase 6.1 — Game-Like "Follow" Camera Mode
-- **Follow Camera Mode (Default)**: Dynamic chase camera that smoothly swings behind the player as they navigate (like modern adventure games), keeping movement intuitive.
-- **Backward Walk Protection**: Moving toward the camera (<kbd>S</kbd>) suppresses auto-spin, allowing natural backward walking without disorienting 180° camera flips.
-- **Manual Drag Override**: Seamlessly blends manual mouse orbit drag with auto-follow, featuring a 1.5s delay and 0.6s smooth fade-in before resuming follow.
-- **Camera Mode Toggle (<kbd>C</kbd>)**: Press <kbd>C</kbd> to toggle between "Follow" and "Free" orbit modes, accompanied by a sleek glassy neon toast notification.
-- **Single Source of Truth (`src/data/portfolio.js`)**: All portfolio content (bio, skills, projects, experience, education, links) is defined purely as data. Adding or editing items requires touching only this file.
-- **Proximity Interaction System**: Automatically detects when the player approaches any building entrance, smoothly displaying the prompt (<kbd>E</kbd> Interact).
-- **Dark Glassy Neon Modal Panels**: Translucent dark navy panels with cyan and purple neon glow accents, tailored for the nighttime fantasy hub aesthetic.
-- **Accessible & Secure**: Built strictly with DOM APIs (`textContent`, `createElement`) to eliminate XSS. Features ARIA dialog roles, focus management, Tab trapping, and Escape key dismissal.
-- **Glowing Ground Rings**: Neon rings at building entrances that pulse gently and intensify as the character approaches.
-- **Controls & Cam Freeze**: Movement and camera rotation are cleanly suspended while viewing panels, restoring smoothly upon closing.
-- **Responsive**: Fully responsive down to 360px mobile viewport widths.
+## Current Status: Phase 7 — Stylized Fantasy Night Atmosphere & Quality System
+- **Night Fantasy Visual Atmosphere**: Midnight navy and twilight purple sky dome, twinkling starfield, glowing billboard moon, and matched exponential fog (`THREE.FogExp2`).
+- **Selective HDR Bloom & Post-Processing (`src/core/PostProcessing.js`)**: UnrealBloomPass with ACESFilmic tone mapping and HalfFloatType render target. Emissive elements (amber windows, cyan neon doors, path lanterns, purple crystals) glow vividly.
+- **Unified Night Palette (`src/world/Atmosphere.js`)**: Single source of truth (`NIGHT_PALETTE`) configuring moonlight, indigo ambient fill, exponential fog, ocean colors, and the single central plaza point light.
+- **Ocean Water Shimmer**: Stylized dark oceanic water with procedural multi-sine wave highlights and specular glimmering.
+- **GPU-Animated Fireflies (`src/world/Fireflies.js`)**: Bioluminescent particles with GPU vertex-shader wandering motion and organic pulsation (1 draw call, zero CPU loop overhead).
+- **Floating Rock Islets (`src/world/FloatingIslands.js`)**: Low-poly inverted rock cones with glowing purple crystal spires gently bobbing in the distance.
+- **Scalable Graphics Quality (`src/core/Quality.js`)**:
+  - Three distinct tiers: `low`, `medium` (default), and `high`.
+  - Persisted in `localStorage` and supports URL parameter override (`?quality=low`).
+  - Low tier completely bypasses the post-processing composer for zero GPU overhead on low-end hardware.
+  - Real-time tier cycling with <kbd>F2</kbd> keyboard shortcut, featuring a sleek floating toast notification.
+  - **Dev-Only Live Visual Tuning**: During development (`npm run dev`), bloom and exposure parameters can be interactively tuned via URL query parameters without rebuilding:
+    - `?bloom=0.35` (bloom strength, clamped `[0.0, 2.0]`)
+    - `?bloomRadius=0.32` (bloom blur radius, clamped `[0.0, 2.0]`)
+    - `?bloomThreshold=0.95` (luminance threshold, clamped `[0.0, 1.5]`)
+    - `?exposure=1.0` (ACESFilmic tone mapping exposure, clamped `[0.2, 3.0]`)
+    - Example: `http://localhost:5173/?quality=high&bloom=0.35&bloomRadius=0.32&bloomThreshold=0.95&exposure=1.0`
+- **Game HUD & Progression System**:
+  - Profile & XP Progression HUD (top-left) with animated XP bar and celebratory discovery toasts.
+  - Fast-Travel Navigation Menu (top-right) with fade-to-black transitions (<kbd>1</kbd> - <kbd>7</kbd>).
+  - Navigational Compass (bottom-right) with landmark blips and real-time yaw synchronization.
+  - Quick Access Social Links (bottom-left) and auto-hide while viewing modals.
+- **Third-Person Follow Camera**: Dynamic chase camera with backward walk protection and manual drag blend (<kbd>C</kbd> toggles Follow/Free).
+- **Lightweight Performance Budget**: Total scene runs $\le 75$ draw calls at High quality and sustains 60+ FPS at Medium.
 
 ## Tech Stack
-- **Three.js**: Lightweight 3D rendering, scene graph, and instanced meshes
+- **Three.js**: Lightweight 3D rendering, scene graph, instanced meshes, and post-processing passes
 - **Vanilla JavaScript**: ES modules, modular component architecture
 - **Vite**: Rapid development server and optimized production bundler
 
@@ -50,16 +63,21 @@ npm run preview
 - **Jump**: <kbd>Space</kbd>
 - **Respawn**: <kbd>R</kbd> (resets to central plaza spawn)
 - **Interact**: <kbd>E</kbd> (opens portfolio info panel when near a building entrance)
+- **Fast Travel**: <kbd>1</kbd> - <kbd>7</kbd> or click the top-right nav bar items
 - **Close Dialog**: <kbd>Escape</kbd> or click the <kbd>×</kbd> button / backdrop
 - **Toggle Camera Mode**: <kbd>C</kbd> (switches between "Follow" chase camera and "Free" manual orbit camera)
+- **Cycle Graphics Quality**: <kbd>F2</kbd> (cycles Low -> Medium -> High with real-time toast)
+- **Stats Overlay**: <kbd>F3</kbd> (toggle FPS, draw calls, triangles, active quality tier)
+- **Collider Debug**: <kbd>F4</kbd> (toggle wireframe collider outlines in dev mode)
 - **Orbit Camera**: <kbd>Left Click + Drag</kbd> or <kbd>Right Click + Drag</kbd>
 - **Zoom Camera**: <kbd>Mouse Wheel</kbd>
-- **Stats Overlay**: <kbd>F3</kbd> (toggle FPS, draw calls, triangles)
-- **Collider Debug**: <kbd>F4</kbd> (toggle wireframe collider outlines in dev mode)
 
 ## How to Edit Portfolio Content
 Open `src/data/portfolio.js`. This is the ONLY file you need to edit:
 - **Profile header**: Edit `profile` object (name, title, tagline, avatar, location).
+- **Progression & XP Config**: Edit `profile.level` (`xpPerArea` e.g. 150, `xpPerLevel` e.g. 300).
+- **Quick Access Links**: Edit `profile.quickLinks` (`label`, `url`, `icon`).
+- **Fast Travel Nav Items**: Edit `navItems` array (`label`, `icon`, `target`).
 - **About Me**: Edit `sections['developer-house']` (`bio` paragraphs, `facts`).
 - **Skills**: Add or modify skill groups and items in `sections['skills']` (name and `level` 0-100).
 - **Projects**: Add project entries in `sections['projects']` (title, description, tech tags, URLs).

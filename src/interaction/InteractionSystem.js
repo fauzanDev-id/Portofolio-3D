@@ -36,6 +36,7 @@ export class InteractionSystem {
 
     this._onNearChangeCallbacks = new Set();
     this._onVisitCallbacks = new Set();
+    this._onPanelStateChangeCallbacks = new Set();
 
     // Hook panel close event to restore player movement
     if (this.infoPanel) {
@@ -122,6 +123,9 @@ export class InteractionSystem {
     }
 
     this.infoPanel.open(section);
+    for (const cb of this._onPanelStateChangeCallbacks) {
+      cb(true);
+    }
   }
 
   /**
@@ -141,6 +145,10 @@ export class InteractionSystem {
     // Re-show interaction prompt if still standing in range of a POI
     if (this.nearestPoi) {
       this.interactionPrompt.show(this.nearestPoi.label);
+    }
+
+    for (const cb of this._onPanelStateChangeCallbacks) {
+      cb(false);
     }
   }
 
@@ -189,11 +197,30 @@ export class InteractionSystem {
   }
 
   /**
+   * Registers a callback fired when the panel opens or closes.
+   * @param {Function} callback - (isOpen: boolean) => void
+   */
+  onPanelStateChange(callback) {
+    if (typeof callback === 'function') {
+      this._onPanelStateChangeCallbacks.add(callback);
+    }
+  }
+
+  /**
+   * Marks a POI id as visited without triggering callbacks.
+   * @param {string} poiId
+   */
+  markVisited(poiId) {
+    this.visitedPois.add(poiId);
+  }
+
+  /**
    * Cleans up listeners.
    */
   dispose() {
     this._onNearChangeCallbacks.clear();
     this._onVisitCallbacks.clear();
+    this._onPanelStateChangeCallbacks.clear();
     this.visitedPois.clear();
   }
 }

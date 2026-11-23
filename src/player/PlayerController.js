@@ -92,6 +92,36 @@ export class PlayerController {
   }
 
   /**
+   * Teleports player to coordinates (x, z) at ground height, resets velocities,
+   * sets facing yaw if provided, and resets jump/ground state.
+   * @param {number} x
+   * @param {number} z
+   * @param {number|null} [faceYaw]
+   */
+  teleportTo(x, z, faceYaw = null) {
+    const groundY = this.world ? this.world.getGroundHeight(x, z) : 0;
+    this.position.set(x, groundY, z);
+    this.velocity.set(0, 0, 0);
+    this.isGrounded = true;
+
+    if (faceYaw !== null && faceYaw !== undefined) {
+      this.yaw = faceYaw;
+      this.model.group.rotation.y = faceYaw;
+    }
+
+    if (this.collisionSystem) {
+      this.collisionSystem.resolveCircle(
+        this.position,
+        PLAYER_CONFIG.RADIUS,
+        this.velocity
+      );
+    }
+
+    this.model.group.position.copy(this.position);
+    this.model.setState('idle');
+  }
+
+  /**
    * Returns current world position vector reference.
    * @returns {THREE.Vector3}
    */

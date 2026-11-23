@@ -24,6 +24,12 @@ export class Engine {
     this._wasRunningBeforeHide = false;
     this._animationFrameId = null;
 
+    this.quality = null;
+    this.postProcessing = null;
+    this._unsubQuality = null;
+    this._qualityToastElement = null;
+    this._qualityToastTimeout = null;
+
     this._initScene();
     this._initCamera();
     this._initRenderer();
@@ -57,6 +63,9 @@ export class Engine {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
+    // Do not auto-reset info so draw calls across multi-pass post-processing sum accurately
+    this.renderer.info.autoReset = false;
+
     // Cap device pixel ratio at 1.5 to keep GPU fill rate manageable on high-DPI screens
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
@@ -81,23 +90,67 @@ export class Engine {
   }
 
   /**
-   * Initializes the lightweight DOM stats overlay showing FPS, draw calls, and rendered triangles.
-   * Toggled with the F3 key, hidden by default.
+   * Initializes the lightweight DOM stats overlay showing FPS, draw calls, triangles, and quality tier.
+   * Toggled with F3 key. Also listens for F2 key to cycle graphics quality tiers.
    */
   _initStatsOverlay() {
     this._fpsElement = document.getElementById('fps-counter');
-    if (!this._fpsElement) return;
 
-    this._onF3KeyDown = (event) => {
+    this._onKeyDown = (event) => {
       if (event.code === 'F3') {
         event.preventDefault();
-        this._fpsElement.classList.toggle('hidden');
+        if (this._fpsElement) {
+          this._fpsElement.classList.toggle('hidden');
+        }
+      } else if (event.code === 'F2') {
+        event.preventDefault();
+        if (this.quality) {
+          const nextTier = this.quality.cycleTier();
+          this._showQualityToast(nextTier);
+        }
       }
     };
-    window.addEventListener('keydown', this._onF3KeyDown);
+    window.addEventListener('keydown', this._onKeyDown);
 
     this._statsFrameCount = 0;
     this._statsLastSample = performance.now();
+  }
+
+  /**
+   * Spawns a floating toast banner showing the new quality tier when cycled with F2.
+   * @param {string} tier - Active tier identifier ('low' | 'medium' | 'high')
+   */
+  _showQualityToast(tier) {
+    if (this._qualityToastTimeout) {
+      clearTimeout(this._qualityToastTimeout);
+      this._qualityToastTimeout = null;
+    }
+
+    if (!this._qualityToastElement) {
+      this._qualityToastElement = document.createElement('div');
+      this._qualityToastElement.className = 'quality-toast';
+      const root = document.getElementById('ui-root') || document.body;
+      root.appendChild(this._qualityToastElement);
+    }
+
+    this._qualityToastElement.classList.remove('fade-out');
+    this._qualityToastElement.textContent = 'Graphics: ';
+    const span = document.createElement('span');
+    span.className = 'toast-accent';
+    span.textContent = (tier || '').toUpperCase();
+    this._qualityToastElement.appendChild(span);
+
+    this._qualityToastTimeout = setTimeout(() => {
+      if (this._qualityToastElement) {
+        this._qualityToastElement.classList.add('fade-out');
+        this._qualityToastTimeout = setTimeout(() => {
+          if (this._qualityToastElement && this._qualityToastElement.parentNode) {
+            this._qualityToastElement.parentNode.removeChild(this._qualityToastElement);
+            this._qualityToastElement = null;
+          }
+        }, 300);
+      }
+    }, 1500);
   }
 
   /**
@@ -114,9 +167,61 @@ export class Engine {
       const fps = Math.round((this._statsFrameCount * 1000) / elapsed);
       const calls = this.renderer.info.render.calls;
       const triangles = this.renderer.info.render.triangles;
-      this._fpsElement.textContent = `FPS: ${fps} | Calls: ${calls} | Tris: ${triangles.toLocaleString()}`;
+      const qTier = this.quality ? this.quality.getTier().toUpperCase() : 'MED';
+      this._fpsElement.textContent = `FPS: ${fps} | Calls: ${calls} | Tris: ${triangles.toLocaleString()} | Quality: ${qTier}`;
       this._statsFrameCount = 0;
       this._statsLastSample = now;
+    }
+  }
+
+  /**
+   * Attaches graphics quality manager and subscribes to runtime tier updates.
+   * @param {import('./Quality.js').Quality} quality
+   */
+  setQuality(quality) {
+    if (this._unsubQuality) {
+      this._unsubQuality();
+      this._unsubQuality = null;
+    }
+
+    this.quality = quality;
+    if (this.quality) {
+      this._unsubQuality = this.quality.onChange((config) => this.applyQuality(config));
+      this.applyQuality(this.quality.getConfig());
+    }
+  }
+
+  /**
+   * Attaches post-processing pipeline.
+   * @param {import('./PostProcessing.js').PostProcessing} postProcessing
+   */
+  setPostProcessing(postProcessing) {
+    this.postProcessing = postProcessing;
+  }
+
+  /**
+   * Applies graphics tier parameters (pixel ratio, shadow mapping, composer size).
+   * @param {object} config
+   */
+  applyQuality(config) {
+    if (!config) return;
+
+    const pixelRatioCap = config.pixelRatioCap || 1.5;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatioCap));
+
+    if (this.renderer.shadowMap) {
+      this.renderer.shadowMap.enabled = config.tier !== 'low';
+    }
+
+    if (this.postProcessing) {
+      this.postProcessing.applyQuality(config);
+    }
+
+    const width = this.container.clientWidth || window.innerWidth;
+    const height = this.container.clientHeight || window.innerHeight;
+    this.renderer.setSize(width, height);
+    if (this.postProcessing) {
+      this.postProcessing.setSize(width, height);
     }
   }
 
@@ -148,8 +253,13 @@ export class Engine {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
 
+    const pixelRatioCap = this.quality ? this.quality.getConfig().pixelRatioCap : 1.5;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatioCap));
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+
+    if (this.postProcessing) {
+      this.postProcessing.setSize(width, height);
+    }
   }
 
   /**
@@ -203,7 +313,15 @@ export class Engine {
       updateFn(delta);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    // Reset draw call & triangle stats once at start of frame so multi-pass post-processing accumulates accurately
+    this.renderer.info.reset();
+
+    // Render through post-processing pipeline or directly via WebGLRenderer
+    if (this.postProcessing && this.postProcessing.enabled) {
+      this.postProcessing.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
 
     // Update draw call & triangle stats from renderer.info
     this._updateStats();
@@ -220,8 +338,28 @@ export class Engine {
     window.removeEventListener('resize', this._onResize);
     document.removeEventListener('visibilitychange', this._onVisibilityChange);
 
-    if (this._onF3KeyDown) {
-      window.removeEventListener('keydown', this._onF3KeyDown);
+    if (this._onKeyDown) {
+      window.removeEventListener('keydown', this._onKeyDown);
+    }
+
+    if (this._unsubQuality) {
+      this._unsubQuality();
+      this._unsubQuality = null;
+    }
+
+    if (this._qualityToastTimeout) {
+      clearTimeout(this._qualityToastTimeout);
+      this._qualityToastTimeout = null;
+    }
+
+    if (this._qualityToastElement && this._qualityToastElement.parentNode) {
+      this._qualityToastElement.parentNode.removeChild(this._qualityToastElement);
+      this._qualityToastElement = null;
+    }
+
+    if (this.postProcessing) {
+      this.postProcessing.dispose();
+      this.postProcessing = null;
     }
 
     if (this.timer) {

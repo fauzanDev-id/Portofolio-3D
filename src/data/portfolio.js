@@ -22,7 +22,30 @@ export const profile = {
   tagline: 'Bridging interactive WebGL graphics with resilient cloud architectures',
   avatar: '⚡',
   location: 'San Francisco, CA / Remote',
+  level: {
+    xpPerArea: 150,
+    xpPerLevel: 300,
+  },
+  quickLinks: [
+    { label: 'GitHub', url: 'https://github.com', icon: '💻' },
+    { label: 'LinkedIn', url: 'https://linkedin.com', icon: '💼' },
+    { label: 'Email', url: 'mailto:alex.morgan@example.com', icon: '✉️' },
+  ],
 };
+
+/**
+ * Navigation items for top-right fast-travel HUD bar.
+ * Ordered list where target is a world POI id or 'home' (spawn plaza).
+ */
+export const navItems = [
+  { label: 'Home', icon: '🏛️', target: 'home' },
+  { label: 'About', icon: '🏠', target: 'developer-house' },
+  { label: 'Skills', icon: '⚡', target: 'skills' },
+  { label: 'Projects', icon: '🚀', target: 'projects' },
+  { label: 'Experience', icon: '💼', target: 'experience' },
+  { label: 'Education', icon: '🎓', target: 'education' },
+  { label: 'Contact', icon: '📬', target: 'contact' },
+];
 
 export const sections = {
   'developer-house': {
@@ -231,4 +254,4 @@ export function validatePortfolio(worldPOIs = []) {
   }
 }
 
-export default { profile, sections, validatePortfolio };
+export default { profile, sections, navItems, validatePortfolio };

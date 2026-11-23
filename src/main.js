@@ -1,55 +1,80 @@
 import * as THREE from 'three';
 import { Engine } from './core/Engine.js';
+import { Quality } from './core/Quality.js';
+import { PostProcessing } from './core/PostProcessing.js';
 import { World } from './world/World.js';
 import { worldLayout } from './world/worldLayout.js';
+import { Atmosphere } from './world/Atmosphere.js';
+import { Sky } from './world/Sky.js';
+import { Fireflies } from './world/Fireflies.js';
+import { FloatingIslands } from './world/FloatingIslands.js';
 import { InputManager } from './input/InputManager.js';
 import { PlayerModel } from './player/PlayerModel.js';
 import { PlayerController } from './player/PlayerController.js';
 import { CameraRig } from './player/CameraRig.js';
 import { CollisionSystem } from './world/CollisionSystem.js';
 import { ColliderDebug } from './utils/ColliderDebug.js';
-import { sections, validatePortfolio } from './data/portfolio.js';
+import {
+  profile,
+  sections,
+  navItems,
+  validatePortfolio,
+} from './data/portfolio.js';
 import { InteractionPrompt } from './ui/InteractionPrompt.js';
 import { InfoPanel } from './ui/InfoPanel.js';
 import { InteractionSystem } from './interaction/InteractionSystem.js';
 import { PoiMarkers } from './world/PoiMarkers.js';
+import { Progress } from './systems/Progress.js';
+import { Hud } from './ui/Hud.js';
 
 /**
  * Initializes the 3D application, creates the island world, player, collision,
  * interaction triggers, UI overlays, and third-person camera.
  */
 function init() {
+  // 1. Graphics Quality manager (determines tier from URL or localStorage, default: 'medium')
+  const quality = new Quality();
+
+  // 2. Core 3D engine
   const engine = new Engine('#canvas-container');
+  engine.setQuality(quality);
 
-  // Stylized atmosphere: sky-blue background and matching horizon fog
-  const skyColor = new THREE.Color(0x8ecae6);
-  engine.scene.background = skyColor;
-  engine.scene.fog = new THREE.Fog(skyColor, 50, 145);
+  // 3. Stylized night atmosphere: fog, tone mapping, moonlight, hemi fill, plaza accent
+  const atmosphere = new Atmosphere(
+    engine.scene,
+    engine.renderer,
+    quality.getConfig()
+  );
 
-  // Soft ambient fill light
-  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x445544, 0.75);
-  hemiLight.position.set(0, 50, 0);
-  engine.scene.add(hemiLight);
+  // 4. Stylized fantasy sky dome with gradient, twinkling stars, and moon billboard
+  const sky = new Sky(engine.scene, quality.getConfig());
 
-  // Key directional sun light with shadow frustum spanning the entire island (~52m)
-  const sunLight = new THREE.DirectionalLight(0xfff8e7, 1.4);
-  sunLight.position.set(40, 60, 30);
-  sunLight.castShadow = true;
+  // 5. Ambient island fireflies particle field
+  const fireflies = new Fireflies(engine.scene, quality.getConfig());
 
-  sunLight.shadow.mapSize.width = 2048;
-  sunLight.shadow.mapSize.height = 2048;
+  // 6. Distant floating rock islets
+  const floatingIslands = new FloatingIslands(
+    engine.scene,
+    worldLayout.floatingIslands,
+    quality.getConfig()
+  );
 
-  const shadowDist = 52;
-  sunLight.shadow.camera.near = 10;
-  sunLight.shadow.camera.far = 140;
-  sunLight.shadow.camera.left = -shadowDist;
-  sunLight.shadow.camera.right = shadowDist;
-  sunLight.shadow.camera.top = shadowDist;
-  sunLight.shadow.camera.bottom = -shadowDist;
-  sunLight.shadow.bias = -0.0003;
-  sunLight.shadow.normalBias = 0.05; // Prevents shadow acne on low-poly geometry
+  // 7. Post-processing pipeline (Selective bloom + ACESFilmic tone mapping OutputPass)
+  const postProcessing = new PostProcessing(
+    engine.renderer,
+    engine.scene,
+    engine.camera,
+    quality.getConfig()
+  );
+  engine.setPostProcessing(postProcessing);
 
-  engine.scene.add(sunLight);
+  // Wire quality tier transitions across all environmental modules
+  quality.onChange((config) => {
+    atmosphere.applyQuality(config);
+    sky.applyQuality(config);
+    fireflies.applyQuality(config);
+    floatingIslands.applyQuality(config);
+  });
 
   // Build the greybox island world from data layout
   const world = new World(engine.scene, worldLayout);
@@ -112,6 +137,26 @@ function init() {
     sections,
   });
 
+  // Progression & XP system (tracks discovery, calculates level/xp, persists in localStorage)
+  const progress = new Progress({
+    config: profile.level,
+    interactionSystem,
+  });
+
+  // Game HUD overlay (profile/XP card, fast-travel nav, compass, quick access, toasts)
+  const hud = new Hud({
+    parent: uiRoot,
+    profile,
+    navItems,
+    pois,
+    spawnPoint: spawn,
+    player: playerController,
+    cameraRig,
+    inputManager,
+    interactionSystem,
+    progress,
+  });
+
   // Dev-only visual collider debug overlay (toggled with F4 key)
   const colliderDebug = new ColliderDebug(
     engine.scene,
@@ -161,7 +206,12 @@ function init() {
   // 3. Camera rig tracking
   // 4. Proximity interaction check
   // 5. Ground marker pulse animation
-  // 6. Debug wireframe sync
+  // 6. World ocean shimmer and dynamic updates
+  // 7. Sky dome positioning & star scintillation
+  // 8. Fireflies GPU animation
+  // 9. Floating islands bobbing & yaw drift
+  // 10. HUD updates (compass orientation & blips)
+  // 11. Debug wireframe sync
   engine.addUpdatable((delta) => {
     // Camera mode toggle: only allowed when portfolio modal is closed
     if (
@@ -176,6 +226,11 @@ function init() {
     cameraRig.update(delta);
     interactionSystem.update(delta);
     poiMarkers.update(delta, interactionSystem.getNearest());
+    world.update(delta);
+    sky.update(delta, engine.camera.position);
+    fireflies.update(delta);
+    floatingIslands.update(delta);
+    hud.update();
     colliderDebug.update();
   });
 
