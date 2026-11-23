@@ -27,8 +27,9 @@ export class Engine {
     this._initScene();
     this._initCamera();
     this._initRenderer();
-    this._initClock();
+    this._initTimer();
     this._bindEvents();
+    this._initStatsOverlay();
   }
 
   _initScene() {
@@ -54,7 +55,7 @@ export class Engine {
 
     // Enable soft shadow mapping
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     // Cap device pixel ratio at 1.5 to keep GPU fill rate manageable on high-DPI screens
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -66,8 +67,9 @@ export class Engine {
     this.container.appendChild(this.renderer.domElement);
   }
 
-  _initClock() {
-    this.clock = new THREE.Clock();
+  _initTimer() {
+    this.timer = new THREE.Timer();
+    this.timer.connect(document);
   }
 
   _bindEvents() {
@@ -76,6 +78,46 @@ export class Engine {
 
     window.addEventListener('resize', this._onResize);
     document.addEventListener('visibilitychange', this._onVisibilityChange);
+  }
+
+  /**
+   * Initializes the lightweight DOM stats overlay showing FPS, draw calls, and rendered triangles.
+   * Toggled with the F3 key, hidden by default.
+   */
+  _initStatsOverlay() {
+    this._fpsElement = document.getElementById('fps-counter');
+    if (!this._fpsElement) return;
+
+    this._onF3KeyDown = (event) => {
+      if (event.code === 'F3') {
+        event.preventDefault();
+        this._fpsElement.classList.toggle('hidden');
+      }
+    };
+    window.addEventListener('keydown', this._onF3KeyDown);
+
+    this._statsFrameCount = 0;
+    this._statsLastSample = performance.now();
+  }
+
+  /**
+   * Updates stats counters every 500ms using renderer.info.render.
+   */
+  _updateStats() {
+    if (!this._fpsElement) return;
+
+    this._statsFrameCount++;
+    const now = performance.now();
+    const elapsed = now - this._statsLastSample;
+
+    if (elapsed >= 500) {
+      const fps = Math.round((this._statsFrameCount * 1000) / elapsed);
+      const calls = this.renderer.info.render.calls;
+      const triangles = this.renderer.info.render.triangles;
+      this._fpsElement.textContent = `FPS: ${fps} | Calls: ${calls} | Tris: ${triangles.toLocaleString()}`;
+      this._statsFrameCount = 0;
+      this._statsLastSample = now;
+    }
   }
 
   /**
@@ -118,8 +160,8 @@ export class Engine {
       this._wasRunningBeforeHide = this.isRunning;
       this.stop();
     } else if (this._wasRunningBeforeHide) {
-      // Discard accumulated delta during background period to avoid animation jumps
-      this.clock.getDelta();
+      // Discard accumulated time during hidden state to avoid animation jumps
+      this.timer.reset();
       this.start();
     }
   }
@@ -130,7 +172,7 @@ export class Engine {
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.clock.start();
+    this.timer.reset();
     this._tick();
   }
 
@@ -147,11 +189,14 @@ export class Engine {
 
   /**
    * Per-frame animation tick.
+   * @param {number} [timestamp]
    */
-  _tick() {
+  _tick(timestamp) {
     if (!this.isRunning) return;
 
-    const delta = this.clock.getDelta();
+    this.timer.update(timestamp);
+    // Clamp delta to a sane max (0.1s) to prevent animation jumps after tab switches or lag
+    const delta = Math.min(this.timer.getDelta(), 0.1);
 
     // Call all registered update hooks
     for (const updateFn of this.updatables) {
@@ -159,7 +204,11 @@ export class Engine {
     }
 
     this.renderer.render(this.scene, this.camera);
-    this._animationFrameId = requestAnimationFrame(() => this._tick());
+
+    // Update draw call & triangle stats from renderer.info
+    this._updateStats();
+
+    this._animationFrameId = requestAnimationFrame((time) => this._tick(time));
   }
 
   /**
@@ -170,6 +219,14 @@ export class Engine {
 
     window.removeEventListener('resize', this._onResize);
     document.removeEventListener('visibilitychange', this._onVisibilityChange);
+
+    if (this._onF3KeyDown) {
+      window.removeEventListener('keydown', this._onF3KeyDown);
+    }
+
+    if (this.timer) {
+      this.timer.dispose();
+    }
 
     this.updatables.clear();
 
