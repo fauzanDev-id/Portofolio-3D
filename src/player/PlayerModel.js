@@ -61,6 +61,22 @@ export class PlayerModel {
   }
 
   /**
+   * Returns active character state.
+   * @returns {string}
+   */
+  getState() {
+    return this._state;
+  }
+
+  /**
+   * Returns root 3D Object.
+   * @returns {THREE.Group}
+   */
+  getObject3D() {
+    return this.group;
+  }
+
+  /**
    * Applies subtle procedural bob and tilt so movement feels responsive.
    * @param {number} delta - Frame delta in seconds
    */

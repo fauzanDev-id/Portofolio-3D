@@ -10,6 +10,9 @@ import { Fireflies } from './world/Fireflies.js';
 import { FloatingIslands } from './world/FloatingIslands.js';
 import { InputManager } from './input/InputManager.js';
 import { PlayerModel } from './player/PlayerModel.js';
+import { AnimatedPlayerModel } from './player/AnimatedPlayerModel.js';
+import { ANIMATION_CONFIG } from './player/animationConfig.js';
+import { assetLoader } from './core/AssetLoader.js';
 import { PlayerController } from './player/PlayerController.js';
 import { CameraRig } from './player/CameraRig.js';
 import { CollisionSystem } from './world/CollisionSystem.js';
@@ -109,6 +112,34 @@ function init() {
     world.getGroundHeight(spawn.x, spawn.z),
     spawn.z
   );
+
+  // Asynchronously load real animated character model; fall back cleanly to capsule on failure
+  assetLoader
+    .loadGLTF('/models/player.glb')
+    .then((gltf) => {
+      const animatedModel = new AnimatedPlayerModel(gltf, ANIMATION_CONFIG);
+
+      // Seamlessly sync position, rotation, and current kinematic state
+      animatedModel.group.position.copy(playerController.position);
+      animatedModel.group.rotation.y = playerController.getYaw();
+      animatedModel.setState(
+        playerModel.getState ? playerModel.getState() : 'idle'
+      );
+
+      // Replace visual node in 3D scene
+      engine.scene.remove(playerModel.group);
+      engine.scene.add(animatedModel.group);
+
+      // Hot-swap model reference in controller and dispose placeholder
+      playerController.model = animatedModel;
+      playerModel.dispose();
+    })
+    .catch((err) => {
+      // Keep capsule active and print one informative notice in development
+      if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+        console.info(`[Player] Using fallback capsule model: ${err.message}`);
+      }
+    });
 
   // Third-person spherical camera rig tracking the player
   cameraRig = new CameraRig({
